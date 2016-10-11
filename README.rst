@@ -9,6 +9,7 @@ Installation
 ------------
 
 ::
+
     $ pip install sentry_stack_checker
 
 Usage
