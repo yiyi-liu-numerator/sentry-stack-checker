@@ -1,6 +1,7 @@
 """Checker for calls to logger.exception with `stack: True`."""
 
 import astroid
+from astroid.node_classes import ExceptHandler
 
 from pylint.checkers import BaseChecker, utils
 from pylint.interfaces import IAstroidChecker
@@ -33,6 +34,43 @@ def is_logger_class(node):
     return False
 
 
+def includes_extra_stack(node):
+    try:
+        extra = utils.get_argument_from_call(node, keyword='extra')
+    except utils.NoSuchArgumentError:
+        return False
+
+    if not isinstance(extra, astroid.Dict):
+        return False
+
+    for key, value in extra.items:
+        if key.value == 'stack' and value.value:
+            return True
+    return False
+
+
+def includes_exc_info(node):
+    if node.func.attrname == 'exception':
+        return True
+
+    try:
+        exc_info = utils.get_argument_from_call(node, keyword='exc_info')
+    except utils.NoSuchArgumentError:
+        return False
+    return bool(exc_info.value)
+
+
+def in_except_handler(node):
+    parent = node.parent
+    if parent is None:
+        return False
+
+    if isinstance(parent, ExceptHandler):
+        return True
+
+    return in_except_handler(parent)
+
+
 class SentryStackChecker(BaseChecker):
     """
     Checks calls to log.exception that include `stack: True` as extra. This
@@ -45,16 +83,22 @@ class SentryStackChecker(BaseChecker):
 
     name = 'sentry-stack-checker'
 
-    MESSAGE_ID = 'log-exception-with-stack-true'
+    ADD_EXC_INFO = 'exc-log-add-exc-info'
+    CHANGE_TO_EXC_INFO = 'exc-log-change-to-exc-info'
     msgs = {
-        'W9501': (
-            "logger.exception calls should not pass `stack: True`",
-            MESSAGE_ID,
+        'R9501': (
+            "Consider changing `'stack': True` to `exc_info=True`",
+            CHANGE_TO_EXC_INFO,
+            None,
+        ),
+        'R9502': (
+            "Consider adding `exc_info=True`",
+            ADD_EXC_INFO,
             None,
         ),
     }
 
-    @utils.check_messages(MESSAGE_ID)
+    @utils.check_messages(ADD_EXC_INFO, CHANGE_TO_EXC_INFO)
     def visit_callfunc(self, node):
         """Called for every function call in the source code."""
 
@@ -62,25 +106,26 @@ class SentryStackChecker(BaseChecker):
             # we are looking for method calls
             return
 
-        if node.func.attrname != 'exception':
+        if node.func.attrname not in [
+            'debug',
+            'info',
+            'warn',
+            'warning',
+            'error',
+            'exception',
+        ]:
             return
 
         if not is_logger_class(node):
             return
 
-        if not self.linter.is_message_enabled(
-            self.MESSAGE_ID, line=node.fromlineno
-        ):
+        if not in_except_handler(node):
             return
 
-        try:
-            extra = utils.get_argument_from_call(node, keyword='extra')
-        except utils.NoSuchArgumentError:
+        if includes_exc_info(node):
             return
 
-        if not isinstance(extra, astroid.Dict):
-            return
-
-        for key, value in extra.items:
-            if key.value == 'stack' and value.value is True:
-                self.add_message(self.MESSAGE_ID, node=node)
+        if not includes_extra_stack(node):
+            self.add_message(self.ADD_EXC_INFO, node=node)
+        else:
+            self.add_message(self.CHANGE_TO_EXC_INFO, node=node)

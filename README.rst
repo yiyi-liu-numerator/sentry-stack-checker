@@ -17,4 +17,4 @@ Usage
 
 ::
 
-    $ pylint --load-plugins sentry_stack_checker <module> -E -d all -e W9501
+    $ pylint --load-plugins sentry_stack_checker <module> -E -d all -e R9501
