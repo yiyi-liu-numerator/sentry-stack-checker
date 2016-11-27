@@ -40,12 +40,11 @@ def includes_extra_stack(node):
     except utils.NoSuchArgumentError:
         return False
 
-    if not isinstance(extra, astroid.Dict):
-        return False
-
-    for key, value in extra.items:
-        if key.value == 'stack' and value.value:
-            return True
+    for inferred in extra.inferred():
+        if isinstance(inferred, astroid.Dict):
+            for key, value in inferred.items:
+                if key.value == 'stack' and value.value:
+                    return True
     return False
 
 
