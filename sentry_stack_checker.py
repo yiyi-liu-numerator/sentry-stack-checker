@@ -72,10 +72,10 @@ def in_except_handler(node):
 
 class SentryStackChecker(BaseChecker):
     """
-    Checks calls to log.exception that include `stack: True` as extra. This
-    captures the stack from the logging call, whereas we typically want the
-    stack from the most recent exception.  The message id is
-    `translation-of-non-string`.
+    Looks for logging calls inside exception handlers, and suggest they
+    include ``exc_info=True``, or change ``extra={'stack': True}`` to
+    ``exc_info=True`` to get the stack from the exception instead of the one
+    from the log statement.
     """
 
     __implements__ = (IAstroidChecker,)
