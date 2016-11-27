@@ -1,9 +1,7 @@
 Sentry stack checker
 ====================
 
-Pylint plugin for finding calls to ``log.exception(extra={'stack': True})``,
-which includes the stack from the log statement, where we typically want the
-stack from the exception.
+Pylint plugin for finding logging calls inside exception handlers, and suggest they include ``exc_info=True``, or change ``extra={'stack': True}`` to ``exc_info=True`` to get the stack from the exception instead of the one from the log statement.
 
 Installation
 ------------
@@ -18,3 +16,4 @@ Usage
 ::
 
     $ pylint --load-plugins sentry_stack_checker <module> -E -d all -e R9501
+    $ pylint --load-plugins sentry_stack_checker <module> -E -d all -e R9502
