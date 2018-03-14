@@ -98,7 +98,7 @@ class SentryStackChecker(BaseChecker):
     }
 
     @utils.check_messages(ADD_EXC_INFO, CHANGE_TO_EXC_INFO)
-    def visit_callfunc(self, node):
+    def visit_call(self, node):
         """Called for every function call in the source code."""
 
         if not isinstance(node.func, astroid.Attribute):
@@ -128,3 +128,6 @@ class SentryStackChecker(BaseChecker):
             self.add_message(self.ADD_EXC_INFO, node=node)
         else:
             self.add_message(self.CHANGE_TO_EXC_INFO, node=node)
+
+    # compat for astroid < 1.4.0
+    visit_callfunc = visit_call
