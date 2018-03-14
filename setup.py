@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='sentry-stack-checker',
-      version='0.1',
+      version='0.2',
       description='Pylint plugin for checking usage of log.exception',
       url='https://github.com/davidszotten/sentry-stack-checker',
       author='David Szotten',
