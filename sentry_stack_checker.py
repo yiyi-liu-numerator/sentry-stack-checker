@@ -12,6 +12,18 @@ def register(linter):
     linter.register_checker(SentryStackChecker(linter))
 
 
+def complete_logging_methods(logging_methods):
+    # Convert logging methods list to a set
+    logging_methods_set = set(logging_methods)
+
+    # Add both warn and warning, if at least one of them is included
+    warning_methods = set(['warn', 'warning'])
+    if logging_methods_set & warning_methods:
+        logging_methods_set |= warning_methods
+
+    return logging_methods_set
+
+
 # from pylint/pylint/checkers/logging.py
 def is_logger_class(node):
     try:
@@ -96,6 +108,17 @@ class SentryStackChecker(BaseChecker):
             None,
         ),
     }
+    options = (
+        (
+            'report-loggers',
+            {
+                'default': 'debug,info,warning,error',
+                'type': 'csv',
+                'metavar': '<logging methods>',
+                'help': 'List of logging methods that should generate messages',
+            },
+        ),
+    )
 
     @utils.check_messages(ADD_EXC_INFO, CHANGE_TO_EXC_INFO)
     def visit_call(self, node):
@@ -105,14 +128,8 @@ class SentryStackChecker(BaseChecker):
             # we are looking for method calls
             return
 
-        if node.func.attrname not in [
-            'debug',
-            'info',
-            'warn',
-            'warning',
-            'error',
-            'exception',
-        ]:
+        logging_methods_to_report = complete_logging_methods(self.config.report_loggers)
+        if node.func.attrname not in logging_methods_to_report:
             return
 
         if not is_logger_class(node):
