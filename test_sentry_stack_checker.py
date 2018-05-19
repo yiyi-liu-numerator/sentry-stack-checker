@@ -106,6 +106,15 @@ except:
     assert errors == []
 
 
+def test_inference_error(make_source, linter):
+    source = make_source("""
+undefined.info('foo')
+""")
+    linter.check([str(source)])
+    errors = [message.symbol for message in linter.reporter.messages]
+    assert errors == []
+
+
 def test_log_except_implicitly_includes_exc_info(make_source, linter):
     source = make_source("""
 try:
