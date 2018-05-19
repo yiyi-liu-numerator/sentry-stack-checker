@@ -4,7 +4,7 @@ python:
   - "3.6"
 install:
   - pip install .
-  - pip install pytest pytest-cov
+  - pip install pylint pytest pytest-cov
 script:
   - >
     pytest
