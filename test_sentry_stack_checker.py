@@ -127,6 +127,38 @@ except:
     assert errors == []
 
 
+def set_option_to_checker(linter, checker_name, option, value):
+    for checker in linter.get_checkers():
+        if checker.name == checker_name:
+            checker.set_option(option, value)
+
+
+def test_report_loggers_option(make_source, linter):
+    set_option_to_checker(linter, 'sentry-stack-checker', 'report-loggers', ['warn', 'error'])
+    source = make_source("""
+try:
+    pass
+except:
+    logger.info('foo')
+""")
+    linter.check([str(source)])
+    errors = [message.symbol for message in linter.reporter.messages]
+    assert errors == []
+
+
+def test_report_warn_if_warning_provided_to_report_loggers(make_source, linter):
+    set_option_to_checker(linter, 'sentry-stack-checker', 'report-loggers', ['warning'])
+    source = make_source("""
+try:
+    pass
+except:
+    logger.warn('foo')
+""")
+    linter.check([str(source)])
+    errors = [message.symbol for message in linter.reporter.messages]
+    assert errors == [SentryStackChecker.ADD_EXC_INFO]
+
+
 def find_children(node):
     children = [node]
     for child in children:
