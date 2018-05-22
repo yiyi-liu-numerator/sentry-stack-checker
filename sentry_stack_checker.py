@@ -120,6 +120,13 @@ class SentryStackChecker(BaseChecker):
         ),
     )
 
+    def set_option(self, optname, *args, **kwargs):
+        super(SentryStackChecker, self).set_option(optname, *args, **kwargs)
+
+        # Update complete logging methods to report
+        if optname == 'report-loggers':
+            self.logging_methods_to_report = complete_logging_methods(self.config.report_loggers)
+
     @utils.check_messages(ADD_EXC_INFO, CHANGE_TO_EXC_INFO)
     def visit_call(self, node):
         """Called for every function call in the source code."""
@@ -128,8 +135,7 @@ class SentryStackChecker(BaseChecker):
             # we are looking for method calls
             return
 
-        logging_methods_to_report = complete_logging_methods(self.config.report_loggers)
-        if node.func.attrname not in logging_methods_to_report:
+        if node.func.attrname not in self.logging_methods_to_report:
             return
 
         if not is_logger_class(node):
