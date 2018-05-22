@@ -12,6 +12,18 @@ def register(linter):
     linter.register_checker(SentryStackChecker(linter))
 
 
+def complete_logging_methods(logging_methods):
+    # Convert logging methods list to a set
+    logging_methods_set = set(logging_methods)
+
+    # Add both warn and warning, if at least one of them is included
+    warning_methods = set(['warn', 'warning'])
+    if logging_methods_set & warning_methods:
+        logging_methods_set |= warning_methods
+
+    return logging_methods_set
+
+
 # from pylint/pylint/checkers/logging.py
 def is_logger_class(node):
     try:
@@ -49,9 +61,6 @@ def includes_extra_stack(node):
 
 
 def includes_exc_info(node):
-    if node.func.attrname == 'exception':
-        return True
-
     try:
         exc_info = utils.get_argument_from_call(node, keyword='exc_info')
     except utils.NoSuchArgumentError:
@@ -96,6 +105,24 @@ class SentryStackChecker(BaseChecker):
             None,
         ),
     }
+    options = (
+        (
+            'report-loggers',
+            {
+                'default': 'debug,info,warning,error',
+                'type': 'csv',
+                'metavar': '<logging methods>',
+                'help': 'List of logging methods that should generate messages',
+            },
+        ),
+    )
+
+    def set_option(self, optname, *args, **kwargs):
+        super(SentryStackChecker, self).set_option(optname, *args, **kwargs)
+
+        # Update complete logging methods to report
+        if optname == 'report-loggers':
+            self.logging_methods_to_report = complete_logging_methods(self.config.report_loggers)
 
     @utils.check_messages(ADD_EXC_INFO, CHANGE_TO_EXC_INFO)
     def visit_call(self, node):
@@ -105,14 +132,7 @@ class SentryStackChecker(BaseChecker):
             # we are looking for method calls
             return
 
-        if node.func.attrname not in [
-            'debug',
-            'info',
-            'warn',
-            'warning',
-            'error',
-            'exception',
-        ]:
+        if node.func.attrname not in self.logging_methods_to_report:
             return
 
         if not is_logger_class(node):

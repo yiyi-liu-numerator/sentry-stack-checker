@@ -17,3 +17,9 @@ Usage
 
     $ pylint --load-plugins sentry_stack_checker <module> -E -d all -e R9501
     $ pylint --load-plugins sentry_stack_checker <module> -E -d all -e R9502
+
+The option ``report-loggers`` can be provided to restrict the logging methods that are checked:
+
+::
+
+    $ pylint --load-plugins sentry_stack_checker <module> --report-loggers=warning,error
