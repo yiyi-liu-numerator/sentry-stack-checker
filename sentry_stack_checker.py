@@ -61,9 +61,6 @@ def includes_extra_stack(node):
 
 
 def includes_exc_info(node):
-    if node.func.attrname == 'exception':
-        return True
-
     try:
         exc_info = utils.get_argument_from_call(node, keyword='exc_info')
     except utils.NoSuchArgumentError:
