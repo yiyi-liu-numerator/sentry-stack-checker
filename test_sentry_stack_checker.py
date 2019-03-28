@@ -146,6 +146,19 @@ except:
     assert errors == []
 
 
+def test_report_loggers_option_debug(make_source, linter):
+    set_option_to_checker(linter, 'sentry-stack-checker', 'report-loggers', ['debug'])
+    source = make_source("""
+try:
+    pass
+except:
+    logger.info('foo')
+""")
+    linter.check([str(source)])
+    errors = [message.symbol for message in linter.reporter.messages]
+    assert errors == []
+
+
 def test_report_warn_if_warning_provided_to_report_loggers(make_source, linter):
     set_option_to_checker(linter, 'sentry-stack-checker', 'report-loggers', ['warning'])
     source = make_source("""
