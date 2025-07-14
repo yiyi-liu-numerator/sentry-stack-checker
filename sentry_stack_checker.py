@@ -1,10 +1,8 @@
 """Checker for calls to logger.exception with `stack: True`."""
 
 import astroid
-from astroid.node_classes import ExceptHandler
-
+from astroid.nodes import ExceptHandler
 from pylint.checkers import BaseChecker, utils
-from pylint.interfaces import IAstroidChecker
 
 
 def register(linter):
@@ -87,8 +85,6 @@ class SentryStackChecker(BaseChecker):
     from the log statement.
     """
 
-    __implements__ = (IAstroidChecker,)
-
     name = 'sentry-stack-checker'
 
     ADD_EXC_INFO = 'exc-log-add-exc-info'
@@ -117,14 +113,16 @@ class SentryStackChecker(BaseChecker):
         ),
     )
 
-    def set_option(self, optname, *args, **kwargs):
-        super(SentryStackChecker, self).set_option(optname, *args, **kwargs)
+    def __init__(self, linter):
+        """Initialize the checker."""
+        super().__init__(linter)
 
-        # Update complete logging methods to report
-        if optname == 'report-loggers':
-            self.logging_methods_to_report = complete_logging_methods(self.config.report_loggers)
+        self.logging_methods_to_report = complete_logging_methods(
+                self.linter.config.report_loggers
+            )
+        
 
-    @utils.check_messages(ADD_EXC_INFO, CHANGE_TO_EXC_INFO)
+    @utils.only_required_for_messages(ADD_EXC_INFO, CHANGE_TO_EXC_INFO)
     def visit_call(self, node):
         """Called for every function call in the source code."""
 

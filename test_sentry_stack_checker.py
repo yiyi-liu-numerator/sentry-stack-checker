@@ -1,178 +1,211 @@
 import astroid
-from astroid.node_classes import Call
+import pylint.testutils
 
-from pylint import checkers
-from pylint.lint import PyLinter
-from pylint.reporters import BaseReporter
+from astroid.nodes import Call
 
 import pytest
 
 from sentry_stack_checker import (
-    SentryStackChecker, register, includes_extra_stack,
+    SentryStackChecker, includes_extra_stack, register,
 )
 
 
-class InMemReporter(BaseReporter):
+class TestSentryStackChecker(pylint.testutils.CheckerTestCase):
+    CHECKER_CLASS = SentryStackChecker
 
-    def handle_message(self, msg):
-        self.messages.append(msg)
+    def test_register_function(self):
+        """Test that the register function works correctly."""
+        # Use the actual linter from the test case
+        original_checkers_count = len(self.linter._checkers)
+        register(self.linter)
+        
+        # Verify that a new checker was registered
+        assert len(self.linter._checkers) > original_checkers_count
 
-    def on_set_current_module(self, module, filepath):
-        self.messages = []
-
-
-@pytest.fixture
-def linter():
-    linter = PyLinter()
-    linter.set_reporter(InMemReporter())
-    checkers.initialize(linter)
-    register(linter)
-    linter.disable('all')
-    linter.enable(SentryStackChecker.ADD_EXC_INFO)
-    linter.enable(SentryStackChecker.CHANGE_TO_EXC_INFO)
-    return linter
-
-
-@pytest.fixture
-def make_source(tmpdir):
-    def make(source):
-        source_file = tmpdir.join("source.py")
-        source_file.write("""\
+    def test_non_reported_logging_method_ignored(self):
+        """Test that logging methods not in report_loggers are ignored."""
+        # Set up checker with only 'error' in report_loggers
+        self.checker.logging_methods_to_report = {'error'}
+        
+        call_node = astroid.extract_node("""
 import logging
 logger = logging.getLogger(__name__)
-""" + source)
-        return source_file
-    return make
-
-
-def test_basic_add(make_source, linter):
-    source = make_source("""
 try:
     pass
 except:
-    logger.warn('foo')
+    logger.debug('foo') #@
 """)
-    linter.check([str(source)])
-    errors = [message.symbol for message in linter.reporter.messages]
-    assert errors == [SentryStackChecker.ADD_EXC_INFO]
+        
+        # Should not add any messages since 'debug' is not in report_loggers
+        with self.assertNoMessages():
+            self.checker.visit_call(call_node)
 
-
-def test_basic_change(make_source, linter):
-    source = make_source("""
+    def test_basic_add_exc_info(self):
+        """Test that we suggest adding exc_info=True in exception handlers."""
+        call_node = astroid.extract_node("""
+import logging
+logger = logging.getLogger(__name__)
 try:
     pass
 except:
-    logger.warn('foo', extra=dict(stack=True))
+    logger.warn('foo') #@
 """)
-    linter.check([str(source)])
-    errors = [message.symbol for message in linter.reporter.messages]
-    assert errors == [SentryStackChecker.CHANGE_TO_EXC_INFO]
+        
+        with self.assertAddsMessages(
+            pylint.testutils.MessageTest(
+                msg_id=SentryStackChecker.ADD_EXC_INFO,
+                node=call_node,
+            ),
+            ignore_position=True,  # Ignore position since it can vary
+        ):
+            self.checker.visit_call(call_node)
 
-
-def test_no_exception(make_source, linter):
-    source = make_source("""
-logger.warn('foo')
-""")
-    linter.check([str(source)])
-    errors = [message.symbol for message in linter.reporter.messages]
-    assert errors == []
-
-
-def test_log_with_exc_info(make_source, linter):
-    source = make_source("""
+    def test_basic_change_to_exc_info(self):
+        """Test that we suggest changing stack=True to exc_info=True."""
+        call_node = astroid.extract_node("""
+import logging
+logger = logging.getLogger(__name__)
 try:
     pass
 except:
-    logger.info('foo', exc_info=True)
+    logger.warn('foo', extra=dict(stack=True)) #@
 """)
-    linter.check([str(source)])
-    errors = [message.symbol for message in linter.reporter.messages]
-    assert errors == []
+        
+        with self.assertAddsMessages(
+            pylint.testutils.MessageTest(
+                msg_id=SentryStackChecker.CHANGE_TO_EXC_INFO,
+                node=call_node,
+            ),
+            ignore_position=True,  # Ignore position since it can vary
 
+        ):
+            self.checker.visit_call(call_node)
 
-def test_ignore_non_log_calls(make_source, linter):
-    source = make_source("""
-class Other():
-    def info(s, *a, **k):
+    def test_no_exception_context(self):
+        """Test that we don't trigger outside exception handlers."""
+        call_node = astroid.extract_node("""
+import logging
+logger = logging.getLogger(__name__)
+logger.warn('foo') #@
+""")
+        
+        with self.assertNoMessages():
+            self.checker.visit_call(call_node)
+
+    def test_log_with_exc_info_already_present(self):
+        """Test that we don't trigger when exc_info=True is already present."""
+        call_node = astroid.extract_node("""
+import logging
+logger = logging.getLogger(__name__)
+try:
+    pass
+except:
+    logger.info('foo', exc_info=True) #@
+""")
+        
+        with self.assertNoMessages():
+            self.checker.visit_call(call_node)
+
+    def test_ignore_non_logger_calls(self):
+        """Test that we ignore calls to non-logger objects."""
+        call_node = astroid.extract_node("""
+class Other:
+    def info(self, *args, **kwargs):
         pass
 
 try:
     pass
 except:
-    Other().info('foo')
+    Other().info('foo') #@
 """)
-    linter.check([str(source)])
-    errors = [message.symbol for message in linter.reporter.messages]
-    assert errors == []
+        
+        with self.assertNoMessages():
+            self.checker.visit_call(call_node)
 
-
-def test_inference_error(make_source, linter):
-    source = make_source("""
-undefined.info('foo')
-""")
-    linter.check([str(source)])
-    errors = [message.symbol for message in linter.reporter.messages]
-    assert errors == []
-
-
-def test_log_except_implicitly_includes_exc_info(make_source, linter):
-    source = make_source("""
+    def test_exception_method_has_implicit_exc_info(self):
+        """Test that logger.exception() doesn't trigger warnings."""
+        call_node = astroid.extract_node("""
+import logging
+logger = logging.getLogger(__name__)
 try:
     pass
 except:
-    logger.exception('foo')
+    logger.exception('foo') #@
 """)
-    linter.check([str(source)])
-    errors = [message.symbol for message in linter.reporter.messages]
-    assert errors == []
+        
+        with self.assertNoMessages():
+            self.checker.visit_call(call_node)
 
-
-def set_option_to_checker(linter, checker_name, option, value):
-    for checker in linter.get_checkers():
-        if checker.name == checker_name:
-            checker.set_option(option, value)
-
-
-def test_report_loggers_option(make_source, linter):
-    set_option_to_checker(linter, 'sentry-stack-checker', 'report-loggers', ['warn', 'error'])
-    source = make_source("""
+    def test_report_loggers_option_excludes_info(self):
+        """Test that info() calls are ignored when not in report-loggers option."""
+        # Configure checker to only report warn and error
+        self.checker.linter.config.report_loggers = ['warn', 'error']
+        self.checker.logging_methods_to_report = {'warn', 'error'}
+        
+        call_node = astroid.extract_node("""
+import logging
+logger = logging.getLogger(__name__)
 try:
     pass
 except:
-    logger.info('foo')
+    logger.info('foo') #@
 """)
-    linter.check([str(source)])
-    errors = [message.symbol for message in linter.reporter.messages]
-    assert errors == []
+        
+        with self.assertNoMessages():
+            self.checker.visit_call(call_node)
 
-
-def test_report_loggers_option_debug(make_source, linter):
-    set_option_to_checker(linter, 'sentry-stack-checker', 'report-loggers', ['debug'])
-    source = make_source("""
+    def test_report_loggers_warn_when_warning_specified(self):
+        """Test that warn() is reported when warning is in report-loggers."""
+        # Configure checker to report warning (which should include warn)
+        self.checker.linter.config.report_loggers = ['warning']
+        self.checker.logging_methods_to_report = {'warn', 'warning'}
+        
+        call_node = astroid.extract_node("""
+import logging
+logger = logging.getLogger(__name__)
 try:
     pass
 except:
-    logger.info('foo')
+    logger.warn('foo') #@
 """)
-    linter.check([str(source)])
-    errors = [message.symbol for message in linter.reporter.messages]
-    assert errors == []
+        
+        with self.assertAddsMessages(
+            pylint.testutils.MessageTest(
+                msg_id=SentryStackChecker.ADD_EXC_INFO,
+                node=call_node,
+            ),
+            ignore_position=True,  # Ignore position since it can vary
+        ):
+            self.checker.visit_call(call_node)
 
+    def test_inference_error_ignored(self):
+        """Test that inference errors are handled gracefully."""
+        call_node = astroid.extract_node("""
+undefined.info('foo') #@
+""")
+        
+        with self.assertNoMessages():
+            self.checker.visit_call(call_node)
 
-def test_report_warn_if_warning_provided_to_report_loggers(make_source, linter):
-    set_option_to_checker(linter, 'sentry-stack-checker', 'report-loggers', ['warning'])
-    source = make_source("""
+    def test_non_method_call_ignored(self):
+        """Test that function calls that are not method calls are ignored."""
+        call_node = astroid.extract_node("""
+import logging
+logger = logging.getLogger(__name__)
 try:
     pass
 except:
-    logger.warn('foo')
+    print('foo') #@
 """)
-    linter.check([str(source)])
-    errors = [message.symbol for message in linter.reporter.messages]
-    assert errors == [SentryStackChecker.ADD_EXC_INFO]
+        
+        # Should not add any messages since print() is not a method call
+        with self.assertNoMessages():
+            self.checker.visit_call(call_node)
+
 
 
 def find_children(node):
+    """Helper function to find all child nodes."""
     children = [node]
     for child in children:
         children.extend(list(child.get_children()))
@@ -180,6 +213,7 @@ def find_children(node):
 
 
 def find_call(nodes):
+    """Helper function to find Call nodes."""
     for node in nodes:
         if isinstance(node, Call):
             return node
@@ -198,6 +232,7 @@ def find_call(nodes):
     ("logger.warn('foo', extra=dict(stack=True))", True),
 ])
 def test_includes_extra_stack(source, includes_stack):
+    """Test the includes_extra_stack utility function."""
     module_node = astroid.parse(source)
     call_node = find_call(find_children(module_node))
     assert includes_extra_stack(call_node) == includes_stack
