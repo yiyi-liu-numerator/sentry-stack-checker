@@ -105,7 +105,7 @@ class SentryStackChecker(BaseChecker):
         (
             'report-loggers',
             {
-                'default': 'debug,info,warning,error',
+                'default': 'warning,error',
                 'type': 'csv',
                 'metavar': '<logging methods>',
                 'help': 'List of logging methods that should generate messages',
